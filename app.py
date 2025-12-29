@@ -2,56 +2,88 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Configuración de la Web
-st.set_page_config(page_title="Gestión de Cuadrillas Operativas", layout="wide")
+st.set_page_config(page_title="Schedule Operativo 2025", layout="wide")
 
-st.title("📊 Control de Turnos: 8 Cuadrillas (4+2+2)")
+# Estilo para imitar el formato de celdas pequeñas del Excel adjunto
+st.markdown("""
+    <style>
+    .reportview-container .main .block-container{ max-width: 100%; }
+    th { background-color: #f0f2f6 !important; font-size: 10px; padding: 2px !important; }
+    td { font-size: 10px; text-align: center !important; padding: 1px !important; width: 30px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- BASE DE DATOS DE PERSONAL (Separados por Cargo) ---
-tecnicos = ["Kevin Jheray", "Jhon Jairo", "Jose Luis", "Brayan Steven", "Michael Estiven", "Duberley", "Luis Angel", "Andres Felipe"]
-auxiliares = ["Javier Enrique", "Juan David", "Deiner Daniel", "Juan Camilo", "Cristian Camilo", "Santiago", "Carlos Mario", "Nuevo Auxiliar"]
+st.title("📅 SCHEDULE TÉCNICO - GESTIÓN DE TURNOS")
 
-def obtener_turno(fecha, es_tecnico, indice):
-    dia_semana = fecha.weekday() # 2=Miércoles, 4=Viernes
+# --- BASE DE DATOS ESTRUCTURADA ---
+# Basado en tu tabla, organizamos por parejas (Técnico + Auxiliar)
+personal = [
+    {"T": "Kevin Jheray", "A": "Javier Enrique", "id": 1},
+    {"T": "Jhon Jairo", "A": "Juan David", "id": 2},
+    {"T": "Jose Luis", "A": "Deiner Daniel", "id": 3},
+    {"T": "Brayan Steven", "A": "Juan Camilo", "id": 4},
+    {"T": "Michael Estiven", "A": "Cristian Camilo", "id": 5},
+    {"T": "Duberley", "A": "Santiago", "id": 6},
+    {"T": "Luis Angel", "A": "Andres Felipe", "id": 7},
+    {"T": "Carlos Mario", "A": "Auxiliar Nuevo", "id": 8},
+    # Agrega aquí las demás parejas de tu tabla...
+]
+
+def calcular_turno(fecha, id_cuadrilla):
+    # Lógica de rotación 7 días (Miércoles o Viernes)
+    semana = fecha.isocalendar()[1]
+    dia_sem = fecha.weekday() # 2=Miércoles, 4=Viernes
     
-    # Lógica de rotación Noche (N) en Miércoles y Viernes
-    if (dia_semana == 2 or dia_semana == 4) and indice < 2:
-        return "N"
-    
-    # Distribución de las 8 cuadrillas
-    if indice < 4: return "D"  # 4 Cuadrillas Día
-    if indice < 6: return "R"  # 2 Cuadrillas Reactivación
-    if indice < 8: return "N"  # 2 Cuadrillas Noche
-    return "X" # Descanso
+    # Cuadrilla que cambia los Miércoles
+    if id_cuadrilla % 2 != 0:
+        es_noche = (semana % 2 == 0 and dia_sem >= 2) or (semana % 2 != 0 and dia_sem < 2)
+        if es_noche and id_cuadrilla <= 2: return "N"
+    # Cuadrilla que cambia los Viernes
+    else:
+        es_noche = (semana % 2 != 0 and dia_sem >= 4) or (semana % 2 == 0 and dia_sem < 4)
+        if es_noche and id_cuadrilla <= 2: return "N"
 
-# --- INTERFAZ WEB ---
-st.sidebar.header("Opciones de Visualización")
-mes = st.sidebar.radio("Seleccione Mes", ["Enero", "Febrero"])
+    if id_cuadrilla <= 4: return "D"
+    if id_cuadrilla <= 6: return "R"
+    return "X"
 
-st.subheader(f"Programación Detallada - {mes} 2025")
-
-# Generar Tabla
+# --- GENERACIÓN DE DATOS ---
+mes = st.sidebar.selectbox("Mes", ["Enero", "Febrero"])
+m_num = 1 if mes == "Enero" else 2
 dias = 31 if mes == "Enero" else 28
-columnas = [f"{(datetime(2025, 1 if mes=='Enero' else 2, d+1)).strftime('%a %d')}" for d in range(dias)]
 
-# Crear filas para Técnicos y Auxiliares por separado
-data = []
-for i in range(len(tecnicos)):
-    fila_t = [obtener_turno(datetime(2025, 1 if mes=='Enero' else 2, d+1), True, i) for d in range(dias)]
-    data.append([tecnicos[i], "Técnico"] + fila_t)
-    
-    fila_a = [obtener_turno(datetime(2025, 1 if mes=='Enero' else 2, d+1), False, i) for d in range(dias)]
-    data.append([auxiliares[i], "Auxiliar"] + fila_a)
+columnas = ["Nombre", "Cargo"] + [str(d) for d in range(1, dias + 1)]
+filas = []
 
-df = pd.DataFrame(data, columns=["Nombre", "Cargo"] + columnas)
+for p in personal:
+    f_t = [p["T"], "Técnico"]
+    f_a = [p["A"], "Auxiliar"]
+    for d in range(1, dias + 1):
+        t = calcular_turno(datetime(2025, m_num, d), p["id"])
+        f_t.append(t)
+        f_a.append(t)
+    filas.append(f_t)
+    filas.append(f_a)
 
-# Aplicar Colores
-def style_turnos(val):
-    if val == "N": return 'background-color: #002b36; color: white' # Noche
-    if val == "R": return 'background-color: #2aa198; color: white' # Reactivación
-    if val == "D": return 'background-color: #b58900; color: white' # Día
-    return ''
+df = pd.DataFrame(filas, columns=columnas)
 
-st.dataframe(df.style.applymap(style_turnos), height=500)
+# --- PANEL DE CONTEO (Lo que pediste: cuántos de cada uno) ---
+dia_ver = st.slider("Ver resumen del día:", 1, dias, 1)
+col_dia = str(dia_ver)
+t_n = len(df[(df['Cargo'] == 'Técnico') & (df[col_dia] == 'N')])
+a_n = len(df[(df['Cargo'] == 'Auxiliar') & (df[col_dia] == 'N')])
+t_d = len(df[(df['Cargo'] == 'Técnico') & (df[col_dia] == 'D')])
+a_d = len(df[(df['Cargo'] == 'Auxiliar') & (df[col_dia] == 'D')])
 
-st.info("✅ El sistema detecta automáticamente los Miércoles y Viernes para el ingreso de nuevas cuadrillas a Noche.")
+c1, c2 = st.columns(2)
+c1.metric("Personal en Noche", f"{t_n} Técnicos / {a_n} Aux")
+c2.metric("Personal en Día", f"{t_d} Técnicos / {a_d} Aux")
+
+# --- APLICAR COLORES AL ESTILO EXCEL ---
+def color_excel(val):
+    if val == "N": return 'background-color: #31859c; color: white'
+    if val == "D": return 'background-color: #ffc000; color: black'
+    if val == "R": return 'background-color: #92d050; color: black'
+    return 'background-color: #ffffff; color: #ccc'
+
+st.dataframe(df.style.applymap(color_excel), height=600)
